@@ -1,3 +1,11 @@
+<div align="center">
+
+**[🇺🇸 English](#english)** · **[🇧🇷 Português](#português)**
+
+</div>
+
+<a id="english"></a>
+
 # Agillis
 
 Multi-tenant SaaS for barbershop management: online booking, schedule control, cash reports, and subscription billing.
@@ -58,5 +66,72 @@ If Google Calendar sync, push notifications, or email fail, the booking itself s
 Java 21 · Spring Boot 3 · Spring Security · JWT · JPA/Hibernate · MySQL · Docker Compose · Nginx · GitHub Actions · Mercado Pago · Google Calendar API (OAuth2) · Ollama · Resend
 
 ## Contact
+
+Kelvin Kauan Pereira Lemos · [LinkedIn](https://linkedin.com/in/kelvinkauan) · [GitHub](https://github.com/kelvinlemos7) · kelvinkauan17@gmail.com
+
+---
+
+<a id="português"></a>
+
+# Agillis (Português)
+
+SaaS multi-tenant para gestão de barbearias: agendamento online, controle de agenda, relatórios de caixa e cobrança de assinatura.
+
+**No ar:** [agillis.app](https://agillis.app) · **Status:** em produção com cliente pagante (fase inicial)
+
+> O código-fonte é privado. Esta página documenta a arquitetura e as decisões de engenharia por trás dele. Fico à disposição para mostrar o código em uma conversa.
+
+## O que faz
+
+Barbearias pequenas costumam organizar a agenda no WhatsApp e em planilhas. O Agillis dá ao dono um painel administrativo, dá aos barbeiros a própria agenda e dá aos clientes um link público de agendamento (`agillis.app/agendar?t=<slug>`), onde escolhem serviço, barbeiro e horário.
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    C[Página de agendamento do cliente] --> N[Nginx]
+    A[Painéis admin / barbeiro] --> N
+    N --> B[API Spring Boot]
+    B --> D[(MySQL)]
+    B --> M[Mercado Pago]
+    B --> G[Google Calendar]
+    B --> O[Ollama LLM]
+    B --> R[E-mail Resend]
+```
+
+- **Backend:** Java 21, Spring Boot 3, Spring Security, JPA/Hibernate, MySQL 8. 62 endpoints REST, 11 entidades.
+- **Frontend:** HTML/CSS/JS puro estático na Vercel (sem etapa de build).
+- **Entrega:** GitHub Actions faz o deploy em uma VPS Oracle Cloud com Docker Compose atrás de Nginx. Backup diário do banco com retenção de 14 dias.
+- **Testes:** cerca de 86 testes unitários (JUnit 5, Mockito) focados no motor de agendamento, nas regras da grade semanal e no construtor de contexto da IA.
+
+## Decisões de engenharia
+
+### 1. Isolamento entre tenants
+Toda linha que pertence a um tenant carrega um `tenant_id`, e toda consulta recebe esse valor do JWT autenticado, nunca do corpo da requisição. Os services também verificam se os IDs referenciados (como um serviço ou um barbeiro) pertencem ao mesmo tenant, então um ID forjado não atravessa a fronteira.
+
+### 2. Double-booking sob concorrência
+O agendamento verifica conflitos usando a **duração do serviço** (um corte de 60 minutos começando às 10:00 bloqueia até as 11:00), aplica o intervalo entre serviços do tenant e exige que o serviço **termine antes do fechamento**. Para impedir que duas requisições simultâneas ocupem o mesmo horário, a linha do barbeiro é carregada com um **lock pessimista de escrita** (`SELECT ... FOR UPDATE`), que serializa os agendamentos por barbeiro.
+
+### 3. Grade semanal com herança
+Cada tenant tem um horário de funcionamento global, e qualquer dia da semana pode ser sobrescrito (fechado ou com horário próprio). A flag "fechado" é verificada antes dos horários, porque um dia fechado é gravado com horários vazios e, de outra forma, pareceria aberto. Um teste de regressão cobre esse caso.
+
+### 4. Cobrança de assinatura com Mercado Pago
+Os webhooks de pagamento são validados com **assinatura HMAC-SHA256** e processados de forma **idempotente**: o ID do último pagamento é guardado, então um webhook reenviado não estende a assinatura duas vezes. Pagamentos desconhecidos (testes do simulador) retornam 200, enquanto falhas reais do provedor retornam 500 para que ele tente de novo. Um job diário agendado envia lembretes de renovação em estágios (5 dias, 1 dia, vencido), com deduplicação.
+
+### 5. Assistente de IA self-hosted
+O dono pode fazer perguntas sobre o próprio negócio ("como foi este mês?"). Um LLM local (Ollama) responde usando apenas os dados daquele tenant. Decisões de projeto:
+- **Roteamento por assunto antes da consulta:** a pergunta é classificada (agenda, receita, serviços, clientes, tendências) e só os blocos de dados relevantes são montados.
+- **Orçamento de tokens:** os blocos de contexto têm prioridades e os de menor prioridade são descartados primeiro, para que as regras nunca sejam cortadas.
+- **Cache em duas camadas** (prompt e resposta, invalidados por hash do conteúdo) e **rate limit por janela deslizante por tenant**.
+- **Tratamento de falhas:** 4xx do modelo é falha permanente, 5xx é repetido com backoff exponencial, e a API devolve 429/503 de acordo.
+
+### 6. Falhas externas nunca quebram o fluxo principal
+Se a sincronização com o Google Calendar, as notificações push ou o e-mail falharem, o agendamento em si continua funcionando. As integrações são feitas em melhor esforço ao redor da transação, e não dentro dela.
+
+## Stack
+
+Java 21 · Spring Boot 3 · Spring Security · JWT · JPA/Hibernate · MySQL · Docker Compose · Nginx · GitHub Actions · Mercado Pago · Google Calendar API (OAuth2) · Ollama · Resend
+
+## Contato
 
 Kelvin Kauan Pereira Lemos · [LinkedIn](https://linkedin.com/in/kelvinkauan) · [GitHub](https://github.com/kelvinlemos7) · kelvinkauan17@gmail.com
